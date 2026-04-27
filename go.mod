@@ -4,6 +4,10 @@ go 1.21
 
 // Personal fork of pressly/goose for learning and experimentation.
 // Upstream: https://github.com/pressly/goose
+//
+// Changes from upstream:
+// - Experimenting with custom migration ordering logic
+// - See branch: feat/custom-ordering
 require (
 	github.com/pressly/goose/v3 v3.17.0
 	github.com/spf13/cobra v1.8.0
