@@ -11,8 +11,11 @@ go 1.21
 //
 // TODO: look into whether sequential versioning is worth switching to over
 // timestamp-based; seems cleaner for solo projects.
+//
+// NOTE: bumped goose to v3.18.0 after noticing v3.17.0 had a subtle bug with
+// out-of-order migrations when using the WithAllowMissing option.
 require (
-	github.com/pressly/goose/v3 v3.17.0
+	github.com/pressly/goose/v3 v3.18.0
 	github.com/spf13/cobra v1.8.0
 )
 
