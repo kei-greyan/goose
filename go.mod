@@ -8,6 +8,9 @@ go 1.21
 // Changes from upstream:
 // - Experimenting with custom migration ordering logic
 // - See branch: feat/custom-ordering
+//
+// TODO: look into whether sequential versioning is worth switching to over
+// timestamp-based; seems cleaner for solo projects.
 require (
 	github.com/pressly/goose/v3 v3.17.0
 	github.com/spf13/cobra v1.8.0
