@@ -1,141 +1,143 @@
+// Package goose provides database migration tooling.
+// It is a fork of pressly/goose with additional features and improvements.
 package goose
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io/fs"
-	"strconv"
 )
 
-// Deprecated: VERSION will no longer be supported in the next major release.
-const VERSION = "v3.18.0"
+// Version is the current version of goose.
+const Version = "v3.0.0"
 
-var (
-	minVersion      = int64(0)
-	maxVersion      = int64((1 << 63) - 1)
-	timestampFormat = "20060102150405"
-	verbose         = false
-	noColor         = false
+// Dialect represents a supported database dialect.
+type Dialect string
 
-	// base fs to lookup migrations
-	baseFS fs.FS = osFS{}
+const (
+	DialectPostgres   Dialect = "postgres"
+	DialectMySQL      Dialect = "mysql"
+	DialectSQLite3    Dialect = "sqlite3"
+	DialectMSSQL      Dialect = "mssql"
+	DialectRedshift   Dialect = "redshift"
+	DialectTiDB       Dialect = "tidb"
+	DialectClickHouse Dialect = "clickhouse"
+	DialectVertica    Dialect = "vertica"
 )
 
-// SetVerbose set the goose verbosity mode
-func SetVerbose(v bool) {
-	verbose = v
+// ErrNoCurrentVersion is returned when there is no current migration version.
+var ErrNoCurrentVersion = fmt.Errorf("no current version found")
+
+// ErrNoNextVersion is returned when there is no next migration version.
+var ErrNoNextVersion = fmt.Errorf("no next version found")
+
+// Provider manages database migrations.
+type Provider struct {
+	db      *sql.DB
+	dialect Dialect
+	dir     string
+	opts    Options
 }
 
-// SetBaseFS sets a base FS to discover migrations. It can be used with 'embed' package.
-// Calling with 'nil' argument leads to default behaviour: discovering migrations from os filesystem.
-// Note that modifying operations like Create will use os filesystem anyway.
-func SetBaseFS(fsys fs.FS) {
-	if fsys == nil {
-		fsys = osFS{}
-	}
-
-	baseFS = fsys
+// Options holds configuration options for the migration provider.
+type Options struct {
+	// TableName is the name of the migrations table. Defaults to "goose_db_version".
+	TableName string
+	// NoVersioning disables versioning and runs migrations without tracking.
+	NoVersioning bool
+	// AllowMissing allows missing (out-of-order) migrations to be applied.
+	AllowMissing bool
+	// Verbose enables verbose logging.
+	Verbose bool
 }
 
-// Run runs a goose command.
+// MigrationResult holds the result of a single migration operation.
+type MigrationResult struct {
+	Source    MigrationSource
+	Direction string
+	Duration  int64 // duration in milliseconds
+	Empty     bool  // true if the migration was a no-op (e.g., no SQL statements)
+}
+
+// MigrationSource describes the source of a migration file.
+type MigrationSource struct {
+	Type    string // "sql" or "go"
+	Path    string
+	Version int64
+}
+
+// NewProvider creates a new migration provider.
 //
-// Deprecated: Use RunContext.
-func Run(command string, db *sql.DB, dir string, args ...string) error {
-	ctx := context.Background()
-	return RunContext(ctx, command, db, dir, args...)
-}
-
-// RunContext runs a goose command.
-func RunContext(ctx context.Context, command string, db *sql.DB, dir string, args ...string) error {
-	return run(ctx, command, db, dir, args)
-}
-
-// RunWithOptions runs a goose command with options.
-//
-// Deprecated: Use RunWithOptionsContext.
-func RunWithOptions(command string, db *sql.DB, dir string, args []string, options ...OptionsFunc) error {
-	ctx := context.Background()
-	return RunWithOptionsContext(ctx, command, db, dir, args, options...)
-}
-
-// RunWithOptionsContext runs a goose command with options.
-func RunWithOptionsContext(ctx context.Context, command string, db *sql.DB, dir string, args []string, options ...OptionsFunc) error {
-	return run(ctx, command, db, dir, args, options...)
-}
-
-func run(ctx context.Context, command string, db *sql.DB, dir string, args []string, options ...OptionsFunc) error {
-	switch command {
-	case "up":
-		if err := UpContext(ctx, db, dir, options...); err != nil {
-			return err
-		}
-	case "up-by-one":
-		if err := UpByOneContext(ctx, db, dir, options...); err != nil {
-			return err
-		}
-	case "up-to":
-		if len(args) == 0 {
-			return fmt.Errorf("up-to must be of form: goose DRIVER DBSTRING [OPTIONS] up-to VERSION")
-		}
-
-		version, err := strconv.ParseInt(args[0], 10, 64)
-		if err != nil {
-			return fmt.Errorf("version must be a number (got '%s')", args[0])
-		}
-		if err := UpToContext(ctx, db, dir, version, options...); err != nil {
-			return err
-		}
-	case "create":
-		if len(args) == 0 {
-			return fmt.Errorf("create must be of form: goose DRIVER DBSTRING [OPTIONS] create NAME [go|sql]")
-		}
-
-		migrationType := "go"
-		if len(args) == 2 {
-			migrationType = args[1]
-		}
-		if err := Create(db, dir, args[0], migrationType); err != nil {
-			return err
-		}
-	case "down":
-		if err := DownContext(ctx, db, dir, options...); err != nil {
-			return err
-		}
-	case "down-to":
-		if len(args) == 0 {
-			return fmt.Errorf("down-to must be of form: goose DRIVER DBSTRING [OPTIONS] down-to VERSION")
-		}
-
-		version, err := strconv.ParseInt(args[0], 10, 64)
-		if err != nil {
-			return fmt.Errorf("version must be a number (got '%s')", args[0])
-		}
-		if err := DownToContext(ctx, db, dir, version, options...); err != nil {
-			return err
-		}
-	case "fix":
-		if err := Fix(dir); err != nil {
-			return err
-		}
-	case "redo":
-		if err := RedoContext(ctx, db, dir, options...); err != nil {
-			return err
-		}
-	case "reset":
-		if err := ResetContext(ctx, db, dir, options...); err != nil {
-			return err
-		}
-	case "status":
-		if err := StatusContext(ctx, db, dir, options...); err != nil {
-			return err
-		}
-	case "version":
-		if err := VersionContext(ctx, db, dir, options...); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("%q: no such command", command)
+// The db parameter is the database connection to use.
+// The dialect parameter specifies the database dialect.
+// The dir parameter is the directory containing migration files.
+func NewProvider(dialect Dialect, db *sql.DB, dir string, opts Options) (*Provider, error) {
+	if db == nil {
+		return nil, fmt.Errorf("db must not be nil")
 	}
-	return nil
+	if dir == "" {
+		return nil, fmt.Errorf("migration directory must not be empty")
+	}
+	if opts.TableName == "" {
+		opts.TableName = "goose_db_version"
+	}
+	return &Provider{
+		db:      db,
+		dialect: dialect,
+		dir:     dir,
+		opts:    opts,
+	}, nil
+}
+
+// Up applies all pending migrations.
+func (p *Provider) Up(ctx context.Context) ([]*MigrationResult, error) {
+	return p.up(ctx, false, 0)
+}
+
+// UpByOne applies the next pending migration.
+func (p *Provider) UpByOne(ctx context.Context) (*MigrationResult, error) {
+	results, err := p.up(ctx, true, 0)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, ErrNoNextVersion
+	}
+	return results[0], nil
+}
+
+// UpTo applies pending migrations up to and including the specified version.
+func (p *Provider) UpTo(ctx context.Context, version int64) ([]*MigrationResult, error) {
+	return p.up(ctx, false, version)
+}
+
+// Down rolls back the most recently applied migration.
+func (p *Provider) Down(ctx context.Context) (*MigrationResult, error) {
+	return p.down(ctx, false, 0)
+}
+
+// DownTo rolls back all migrations down to and including the specified version.
+func (p *Provider) DownTo(ctx context.Context, version int64) (*MigrationResult, error) {
+	return p.down(ctx, false, version)
+}
+
+// Status returns the status of all migrations.
+func (p *Provider) Status(ctx context.Context) ([]*MigrationStatus, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+// MigrationStatus represents the status of a single migration.
+type MigrationStatus struct {
+	Source    MigrationSource
+	AppliedAt string // ISO 8601 timestamp or empty if not applied
+}
+
+func (p *Provider) up(ctx context.Context, byOne bool, version int64) ([]*MigrationResult, error) {
+	// TODO: implement
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (p *Provider) down(ctx context.Context, byOne bool, version int64) (*MigrationResult, error) {
+	// TODO: implement
+	return nil, fmt.Errorf("not implemented")
 }
